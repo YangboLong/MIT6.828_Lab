@@ -355,7 +355,29 @@ pte_t *
 pgdir_walk(pde_t *pgdir, const void *va, int create)
 {
 	// Fill this function in
-	return NULL;
+    pde_t *p_pde = &pgdir[PDX(va)]; // pointer to a page dir entry
+    pte_t *p_pt; // pointer to the page table
+    struct PageInfo *pp; // correspond to a physical page
+
+    if ((*p_pde & PTE_P) == 0) { // the page table does not exist
+        if (create == 0)    return NULL;
+
+        // create a page and insert an entry to PDE
+        pp = page_alloc(ALLOC_ZERO);
+        if (pp == NULL) return NULL;
+        pp->pp_ref++;
+
+        // obtain the page table address and save it to p_pt
+        p_pt = (pte_t *) page2pa(pp);
+        // set up the address and permissions in a PDE
+        *p_pde = (pde_t) p_pt | PTE_P | PTE_W | PTE_U;
+    }
+
+    // fetch the page table address in a page directory entry
+    p_pt = (pte_t *) KADDR(PTE_ADDR(*p_pde));
+
+    // return the correspoinding pointer of the page table entry
+	return &p_pt[PTX(va)];
 }
 
 //
@@ -373,6 +395,13 @@ static void
 boot_map_region(pde_t *pgdir, uintptr_t va, size_t size, physaddr_t pa, int perm)
 {
 	// Fill this function in
+    int i;
+    for (i = 0; i < size / PGSIZE; i++) {
+        // p_pte points to a page table entry
+        pte_t *p_pte = pgdir_walk(pgdir, (void *)(va + i * PGSIZE), 1);
+        // set up the address and permissions in a PTE
+        *p_pte = (pa + i * PGSIZE) | perm | PTE_P;
+    }
 }
 
 //
@@ -404,6 +433,26 @@ int
 page_insert(pde_t *pgdir, struct PageInfo *pp, void *va, int perm)
 {
 	// Fill this function in
+    // look for the PTE w.r.t. va, if it doesn't exist, allocate a page
+    pte_t *p_pte = pgdir_walk(pgdir, va, 1);
+    if (p_pte == NULL)  return -E_NO_MEM;
+
+    // this line must be placed before page_remove, otherwise, when the
+    // corner happens the physical page will be freed due to pp_ref == 0
+    pp->pp_ref++;
+
+    if (*p_pte & PTE_P) {
+        // there is already a physical page mapped at va
+        page_remove(pgdir, va);
+    }
+
+    // set up PTE with the physical page frame address and permissions
+    // there is no need to set up a PDE because, 1. if a page table is 
+    // allocated in pgdir_walk the PDE has been set there; 2. if a page
+    // table is searched in pgdir_walk, there is already a PDE pointing
+    // to the page table.
+    *p_pte = page2pa(pp) | perm | PTE_P; 
+
 	return 0;
 }
 
@@ -422,7 +471,17 @@ struct PageInfo *
 page_lookup(pde_t *pgdir, void *va, pte_t **pte_store)
 {
 	// Fill this function in
-	return NULL;
+    pte_t *p_pte = pgdir_walk(pgdir, va, 0);
+
+    // cannot check (*p_pte & PTE_P) below, since when pgdir_walk returns
+    // NULL, it's invalid to dereference p_pte.
+    if (!p_pte) return NULL;
+
+    if (pte_store != 0) {
+        *pte_store = p_pte;
+    }
+
+    return pa2page(PTE_ADDR(*p_pte));
 }
 
 //
@@ -444,6 +503,16 @@ void
 page_remove(pde_t *pgdir, void *va)
 {
 	// Fill this function in
+    pte_t *p_pte;
+    pte_t **pte_store = &p_pte;
+    struct PageInfo *pp = page_lookup(pgdir, va, pte_store);
+    if (pp == NULL) return;
+
+    page_decref(pp);
+    if (**pte_store & PTE_P) { // PTE correspoinding to va exists
+        **pte_store = 0; // set the PTE to 0
+    }
+    tlb_invalidate(pgdir, va);
 }
 
 //
