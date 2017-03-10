@@ -574,8 +574,38 @@ int
 user_mem_check(struct Env *env, const void *va, size_t len, int perm)
 {
 	// LAB 3: Your code here.
+    pte_t *p_pte;
+    pte_t **pte_store = &p_pte;
+    struct PageInfo *pp; // physical page's address
+    char *vs = (char *)va;
+    char *ve = ROUNDUP((char *)va+len, PGSIZE);
 
-	return 0;
+    // test every page that contains any of that range
+    for (; vs < ve; vs = ROUNDDOWN(vs + PGSIZE, PGSIZE)) {
+        // check if address is below ULIM
+        if ((uint32_t)vs >= ULIM) {
+            user_mem_check_addr = (uintptr_t)vs;
+            return -E_FAULT;
+        }
+
+        // look for a physical page
+        pp = page_lookup(env->env_pgdir, vs, pte_store);
+
+        if (pp == NULL) {
+            // failed to find a physical page mapped with va
+            user_mem_check_addr = (uintptr_t)vs;
+            return -E_FAULT;
+        } else {
+            // found a pp
+            if (((*p_pte) & (perm|PTE_P)) != (perm|PTE_P)) {
+                // don't have permission
+                user_mem_check_addr = (uintptr_t)vs;
+                return -E_FAULT;
+            }
+        }
+    }
+
+    return 0;
 }
 
 //
