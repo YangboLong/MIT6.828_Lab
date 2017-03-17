@@ -193,14 +193,14 @@ cga_putc(int c)
 		break;
 	}
 
-	// What is the purpose of this?
+    /* when the vga display is full screen, move the display upward by one row */
 	if (crt_pos >= CRT_SIZE) {
 		int i;
-
+        /* move the current display upward by one row */
 		memmove(crt_buf, crt_buf + CRT_COLS, (CRT_SIZE - CRT_COLS) * sizeof(uint16_t));
 		for (i = CRT_SIZE - CRT_COLS; i < CRT_SIZE; i++)
-			crt_buf[i] = 0x0700 | ' ';
-		crt_pos -= CRT_COLS;
+			crt_buf[i] = 0x0700 | ' '; /* initiaize the new row at the bottom to be blank */
+		crt_pos -= CRT_COLS; /* cursor points to the beginning of the new bottom row */
 	}
 
 	/* move that little blinky thing */
