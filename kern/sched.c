@@ -29,6 +29,35 @@ sched_yield(void)
 	// below to halt the cpu.
 
 	// LAB 4: Your code here.
+    if (curenv == NULL) { // there was no previously running environment
+        idle = &envs[0];
+    } else {
+        idle = &envs[ENVX(curenv->env_id)];
+    }
+
+    int i;
+    for (i = ENVX(idle->env_id); i < NENV; ) {
+        // look for the first environment and switch to it
+        if (envs[i].env_status == ENV_RUNNABLE) {
+            env_run(&envs[i]);
+        }
+
+        // loop in a "round-robin" fashion
+        if (i == NENV - 1) {
+            i = 0;
+        } else {
+            i++;
+        }
+
+        // no envs are runnable till looping back
+        if (i == ENVX(idle->env_id)) {
+            if (curenv && curenv->env_status == ENV_RUNNING) {
+                env_run(curenv);
+            } else {
+                break;
+            }
+        }
+    }
 
 	// sched_halt never returns
 	sched_halt();
@@ -66,7 +95,7 @@ sched_halt(void)
 	xchg(&thiscpu->cpu_status, CPU_HALTED);
 
 	// Release the big kernel lock as if we were "leaving" the kernel
-	unlock_kernel();
+    unlock_kernel();
 
 	// Reset stack pointer, enable interrupts and then halt.
 	asm volatile (
